@@ -1,0 +1,78 @@
+*Send Email
+CLASS zcl_send_mail DEFINITION
+PUBLIC
+FINAL
+CREATE PUBLIC.
+PUBLIC SECTION.
+METHODS:
+is_valid_address 
+IMPORTING iv_address TYPE string
+RETURNING VALUE(ev_result) TYPE abap_bool,
+send_mail 
+IMPORTING iv_to TYPE string
+ iv_subject TYPE string
+ iv_content TYPE string
+RETURNING VALUE(ev_result) TYPE abap_bool.
+PROTECTED SECTION.
+PRIVATE SECTION.
+ENDCLASS.
+CLASS zcl_send_mail IMPLEMENTATION.
+METHOD is_valid_address.
+*Validate the email address
+DATA: matcher TYPE REF TO cl_abap_matcher,
+      match   TYPE abap_bool.
+matcher = cl_abap_matcher=>create( pattern     = '\w+@\w+(\.\w+)+'
+                                   text        = iv_address ).
+match = matcher->match( ).
+ev_result = match.
+ENDMETHOD.
+METHOD send_mail.
+      lt_solix_tab  TYPE solix_tab.
+
+    DATA: lv_size      TYPE so_obj_len,
+          lv_recipient TYPE ad_smtpadr,
+          lv_ricef_id  TYPE zusfide_ricef_id.
+
+    CLASS cl_bcs DEFINITION LOAD.
+
+    TRY.
+        DATA(lr_email) = cl_bcs=>create_persistent( ).
+
+* Populate Email Body
+        lt_email_body = VALUE #( ( |Hello,| ) ( |Send Email Test.| ) ( |Date: | && lv_date  ) ).
+        DATA(lr_email_body) = cl_document_bcs=>create_document( i_type = 'RAW' i_text = lt_email_body  i_subject = |Send Email Subject| ).
+
+* Add Attachment
+        cl_bcs_convert=>string_to_solix( EXPORTING iv_string = lv_email_attachment
+                                                   iv_codepage = |4103|
+                                         IMPORTING et_solix  = lt_solix_tab
+                                                   ev_size   = lv_size ).
+
+        lr_email_body->add_attachment( i_attachment_type = |XLS|
+                                       i_attachment_subject = |Weight Discrepancy_| && lv_date
+                                       i_attachment_size = lv_size
+                                       i_att_content_hex = lt_solix_tab ).
+
+        lr_email->set_document( lr_email_body ).
+
+* Determine Email Sender
+        DATA(lr_sender) = cl_sapuser_bcs=>create( sy-uname ).
+        TRY.
+            lr_email->set_sender( lr_sender ).
+          CATCH cx_address_bcs.
+        ENDTRY.
+
+* Determine Email recipient   
+          lv_recipient="";     "Email Recipienter
+          DATA(lr_recipient) = cl_cam_address_bcs=>create_internet_address( lv_recipient ).
+          lr_email->add_recipient( i_recipient = lr_recipient  i_express   = abap_true ).
+
+* Send Email
+        lr_email->send( i_with_error_screen = abap_true ).
+        COMMIT WORK.
+        ev_result = abap_true.
+      CATCH cx_bcs.
+    ENDTRY.
+
+ENDMETHOD.
+ENDCLASS.
